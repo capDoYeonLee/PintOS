@@ -50,6 +50,9 @@ process_create_initd (const char *file_name) {
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 
+	char *save_ptr;
+	strtok_r(file_name, " ", &save_ptr);
+
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
@@ -160,6 +163,7 @@ error:
 
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
+// f_name을 parsing하고 user_stack에 매개변수를 push하는 역할.
 int
 process_exec (void *f_name) {
 	char *file_name = f_name;
@@ -174,20 +178,119 @@ process_exec (void *f_name) {
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
 	/* We first kill the current context */
-	process_cleanup ();
+	process_cleanup ();  // thread르ㄹ 사용하는데 왜 프로세스를 죽이지? 
+	
+	char *parse[64];
+	char *token, *save_ptr;
+	int count = 0;
+
+	//아래 코드가 무엇을 의미하는거지?
+	for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) parse[count++] = token;
 
 	/* And then load the binary */
-	success = load (file_name, &_if);
+	success = load(file_name, &_if);
+
+	// argument passing
+	argument_stack(parse, count, &_if.rsp); 
+	_if.R.rdi = count;
+	_if.R.rsi = (char *)_if.rsp + 8;
+
+	
+	hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);  //user stack을 16진수로 출력
 
 	/* If load failed, quit. */
-	palloc_free_page (file_name);
-	if (!success)
+ 	if (!success)
 		return -1;
 
 	/* Start switched process. */
 	do_iret (&_if);
 	NOT_REACHED ();
 }
+
+void argument_stack(char **parse, int count, void **rsp) {
+    printf("🔍 Parsed arguments (count = %d):\n", count);
+    for (int i = 0; i < count; i++) {
+        printf("  parse[%d] = \"%s\"\n", i, parse[i]);
+    }
+
+    char *sp = (char *)(*rsp);  // rsp를 char*로 캐스팅해서 계산용으로 사용
+
+    // 문자열을 역순으로 복사
+    for (int i = count - 1; i >= 0; i--) {
+        size_t len = strlen(parse[i]) + 1;  // 널 문자까지 포함
+        sp -= len;
+        memcpy(sp, parse[i], len);
+        parse[i] = sp;  // 문자열이 복사된 주소 저장
+    }
+
+    // 8바이트 정렬
+    uintptr_t align = (uintptr_t)sp % 8;
+    if (align != 0) {
+        sp -= align;
+        memset(sp, 0, align);
+    }
+
+    // argv[count] = NULL
+    sp -= sizeof(char *);
+    memset(sp, 0, sizeof(char *));
+
+    // argv[i] 주소 push
+    for (int i = count - 1; i >= 0; i--) {
+        sp -= sizeof(char *);
+        memcpy(sp, &parse[i], sizeof(char *));
+    }
+
+    // fake return address (0)
+    sp -= sizeof(void *);
+    memset(sp, 0, sizeof(void *));
+
+    // 최종 rsp 업데이트
+    *rsp = (void *)sp;
+}
+
+
+// void argument_stack(char **parse, int count, void **rsp) {
+
+// 	printf("🔍 Parsed arguments (count = %d):\n", count);
+//     for (int i = 0; i < count; i++) {
+//         printf("  parse[%d] = \"%s\"\n", i, parse[i]);
+//     }
+	
+// 	// 각 문자열은 역순으로 push 
+// 	for (int i = count - 1; i > -1; i--) {
+
+// 		for (int j = strlen(parse[i]); j > -1; j--) {
+
+// 			(*rsp)--;
+// 			**(char **)rsp = parse[i][j]; // push parse[i][j]를 한 글자씩 to user stack
+// 		}
+
+// 		parse[i] = *(char **)rsp; // 지금 넣은 문자열의 주소를 저장 (추후 argv[]로 사용하기 위해.)
+// 	}
+
+// 	// 8byte 정렬
+// 	int padding = (int)*rsp % 8;
+// 	for (int i = 0; i < padding; i++){
+// 		(*rsp)--;
+// 		**(uint8_t **)rsp = 0;
+// 	}
+
+// 	// argv[count] = NULL -> 인자 문자열 종료를 나타내는 0 push
+// 	(*rsp) -= 8;
+// 	**(char ***)rsp = 0;
+
+// 	// 각 인자 주소 push (argv[i])
+// 	for (int i = count -1; i > -1; i--) {
+// 		(*rsp) -= 8;
+// 		**(char ***)rsp == parse[i];
+// 	}
+
+// 	// push fake return address 
+// 	(*rsp) -= 8;
+// 	**(void ***)rsp = 0;
+// }
+
+
 
 
 /* Waits for thread TID to die and returns its exit status.  If
@@ -204,6 +307,10 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+
+	for (int i = 0; i< 100000000; i++){
+		
+	}
 	return -1;
 }
 
@@ -334,7 +441,6 @@ load (const char *file_name, struct intr_frame *if_) {
 	if (t->pml4 == NULL)
 		goto done;
 	process_activate (thread_current ());
-
 	/* Open executable file. */
 	file = filesys_open (file_name);
 	if (file == NULL) {
