@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -28,6 +29,10 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+
+/* init file descriptor table*/
+#define FDT_PAGES 2
+#define FDT_COUNT_LIMIT 128
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -100,7 +105,26 @@ struct thread {
 	struct lock *wait_on_lock;
 	struct list donations;
 	struct list_elem donation_elem;
-	//t
+	
+	int exit_status;
+	struct file **fdt;
+	int next_fd;
+
+	struct intr_frame parent_if;
+	struct list child_list;
+	struct list_elem child_elem;
+
+	/*
+	 __do_fork() 함수가 호출되어 load가 진행된다
+	 부모는 이 load가 완료될 때까지 대기해야 한다.
+	 semaphore를 활용해 load가 완료될 때까지 부모를 재운다.
+	 아래는 이를 위해 선언한 semaphore이다.
+	*/
+	struct semaphore load_sema;
+	struct semaphore exit_sema;
+	struct semaphore wait_sema;
+
+	struct file *running;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
