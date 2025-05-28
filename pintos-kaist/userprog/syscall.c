@@ -67,16 +67,12 @@ syscall_init (void) {
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
 	
 	//file을 접근(read, write)할 때, lock을 얻은 후 접근할 수 있도록 구현
-	//
 	lock_init(&filesys_lock);
 }
 
 /* The main system call interface */
 void
 syscall_handler (struct intr_frame *f UNUSED) {
-	// TODO: Your implementation goes here.
-	//printf ("system call!\n");
-	//thread_exit ();
 	int syscall_number = f->R.rax;
 
 	switch (syscall_number) {
@@ -133,12 +129,11 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 void check_address(void *addr)
 {
-	if (addr == NULL)
-		exit(-1);
-	if (!is_user_vaddr(addr))
-		exit(-1);
-	if (pml4_get_page(thread_current()->pml4, addr) == NULL)
-		exit(-1);
+	if (addr == NULL) exit(-1);
+	
+	if (!is_user_vaddr(addr)) exit(-1);
+	
+	if (pml4_get_page(thread_current()->pml4, addr) == NULL)exit(-1);
 }
 
 int wait(int pid) {
@@ -171,7 +166,6 @@ void exit(int status) {
 	struct thread *curr = thread_current();
 	curr->exit_status = status;
 	printf("%s: exit(%d)\n", curr->name, status);
-	//printf("status %d", status);
 	thread_exit(); // 여기 확인
 }
 

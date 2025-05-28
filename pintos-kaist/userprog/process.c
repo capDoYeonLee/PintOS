@@ -376,12 +376,21 @@ process_exit (void) {
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
-	for (int i = 2; i < FDT_COUNT_LIMIT; i++) {
-		close(i);
+	// for (int i = 2; i < FDT_COUNT_LIMIT; i++) {
+	// 	close(i);
+	// }
+
+	for (int i = 2; i < FDT_COUNT_LIMIT; i++)
+	{
+		if (curr->fdt[i] != NULL)
+			curr->fdt[i] = NULL;
+			curr->next_fd = NULL;
+			close(i);
 	}
-	palloc_free_page(curr->fdt);
+	palloc_free_multiple(curr->fdt, FDT_PAGES);
+	//palloc_free_page(curr->fdt);
 	file_close(curr->running);
-	process_cleanup ();
+	process_cleanup();
 
 	sema_up(&curr->wait_sema);
 	sema_down(&curr->exit_sema);

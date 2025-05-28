@@ -32,7 +32,8 @@ typedef int tid_t;
 
 /* init file descriptor table*/
 #define FDT_PAGES 2
-#define FDT_COUNT_LIMIT 128
+#define FDT_COUNT_LIMIT 144
+// #define FDT_COUNT_LIMIT 128
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
