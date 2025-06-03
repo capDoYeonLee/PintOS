@@ -56,12 +56,12 @@ typedef void hash_action_func (struct hash_elem *e, void *aux);
 
 /* Hash table. */
 struct hash {
-	size_t elem_cnt;            /* Number of elements in table. */
-	size_t bucket_cnt;          /* Number of buckets, a power of 2. */
-	struct list *buckets;       /* Array of `bucket_cnt' lists. */
-	hash_hash_func *hash;       /* Hash function. */
-	hash_less_func *less;       /* Comparison function. */
-	void *aux;                  /* Auxiliary data for `hash' and `less'. */
+	size_t elem_cnt;            /* Number of elements in table. 요소 수 */
+	size_t bucket_cnt;          /* Number of buckets, a power of 2. 버킷 수 2의 제곱*/
+	struct list *buckets;       /* Array of `bucket_cnt' lists. 버킷 배열*/
+	hash_hash_func *hash;       /* Hash function. 해시 함수*/
+	hash_less_func *less;       /* Comparison function. 정렬 함수 */
+	void *aux;                  /* Auxiliary data for `hash' and `less'. 부가 정보*/
 };
 
 /* A hash table iterator. */
@@ -72,25 +72,25 @@ struct hash_iterator {
 };
 
 /* Basic life cycle. */
-bool hash_init (struct hash *, hash_hash_func *, hash_less_func *, void *aux);
-void hash_clear (struct hash *, hash_action_func *);
-void hash_destroy (struct hash *, hash_action_func *);
+bool hash_init (struct hash *, hash_hash_func *, hash_less_func *, void *aux);  // 해시 테이블 초기화
+void hash_clear (struct hash *, hash_action_func *);							// 모든 요소 제거 (but 메모리는 유지)
+void hash_destroy (struct hash *, hash_action_func *);  						// 요서 제거 + 버킷 메모리도 해제
 
 /* Search, insertion, deletion. */
-struct hash_elem *hash_insert (struct hash *, struct hash_elem *);
-struct hash_elem *hash_replace (struct hash *, struct hash_elem *);
-struct hash_elem *hash_find (struct hash *, struct hash_elem *);
-struct hash_elem *hash_delete (struct hash *, struct hash_elem *);
+struct hash_elem *hash_insert (struct hash *, struct hash_elem *);  		// 새 요소 삽입. 같은 키가 있다면 무시
+struct hash_elem *hash_replace (struct hash *, struct hash_elem *);			// 같이 키가 있다면 교체 (기존 값 반환)
+struct hash_elem *hash_find (struct hash *, struct hash_elem *);			// 요소 찾기(less를 사용해서 비교)
+struct hash_elem *hash_delete (struct hash *, struct hash_elem *);			// 요소 삭제 후 반환
 
 /* Iteration. */
-void hash_apply (struct hash *, hash_action_func *);
-void hash_first (struct hash_iterator *, struct hash *);
-struct hash_elem *hash_next (struct hash_iterator *);
-struct hash_elem *hash_cur (struct hash_iterator *);
+void hash_apply (struct hash *, hash_action_func *);  						// 모든 요소에 함수 적용
+void hash_first (struct hash_iterator *, struct hash *);					// 순회 시작 요소
+struct hash_elem *hash_next (struct hash_iterator *);						// 순회 다음 요소
+struct hash_elem *hash_cur (struct hash_iterator *);						// 현재 iterator가 가리키는 요소 반환
 
 /* Information. */
-size_t hash_size (struct hash *);
-bool hash_empty (struct hash *);
+size_t hash_size (struct hash *);  					// 요소 개수 반환
+bool hash_empty (struct hash *);					// 비어있는지 확인
 
 /* Sample hash functions. */
 uint64_t hash_bytes (const void *, size_t);

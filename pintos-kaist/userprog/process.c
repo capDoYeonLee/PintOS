@@ -456,20 +456,20 @@ process_activate (struct thread *next) {
 /* Executable header.  See [ELF1] 1-4 to 1-8.
  * This appears at the very beginning of an ELF binary. */
 struct ELF64_hdr {
-	unsigned char e_ident[EI_NIDENT];
-	uint16_t e_type;
-	uint16_t e_machine;
-	uint32_t e_version;
-	uint64_t e_entry;
-	uint64_t e_phoff;
-	uint64_t e_shoff;
-	uint32_t e_flags;
-	uint16_t e_ehsize;
-	uint16_t e_phentsize;
-	uint16_t e_phnum;
-	uint16_t e_shentsize;
-	uint16_t e_shnum;
-	uint16_t e_shstrndx;
+	unsigned char e_ident[EI_NIDENT];     // ELF 식별자. 첫 4바이트는 0x7F 'E' 'L' 'F'로 시작
+	uint16_t e_type;					  // 실행 파일인지, 객체 파일인지 
+	uint16_t e_machine;					  // 아키텍처 
+	uint32_t e_version;					  // ELF 버전 항시 1
+	uint64_t e_entry;					  // 프로그램 시작 즈소(entry point), 즉 rip 초기 값
+	uint64_t e_phoff;					  // Program Header Table 시작 위치(파일 오프셋)
+	uint64_t e_shoff;					  // Section Header Table 시작 위치 (사용 안함)
+	uint32_t e_flags;					  // CPU-specific 플래그 (사용 안함)	
+	uint16_t e_ehsize;					  // ELF 헤더 크기
+	uint16_t e_phentsize;				  // Program 헤더 크기
+	uint16_t e_phnum;					  // Program 헤더 개수
+	uint16_t e_shentsize;				  // Section Header 크기
+	uint16_t e_shnum;					  // Section Header 개수
+	uint16_t e_shstrndx;				  // Section 이름 문자열 테이블 인덱스
 };
 
 struct ELF64_PHDR {
@@ -497,8 +497,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
  * Stores the executable's entry point into *RIP
  * and its initial stack pointer into *RSP.
  * Returns true if successful, false otherwise. */
-static bool
-load (const char *file_name, struct intr_frame *if_) {
+static bool load (const char *file_name, struct intr_frame *if_) {
 	struct thread *t = thread_current ();
 	struct ELF ehdr;
 	struct file *file = NULL;
@@ -519,7 +518,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 	}
 
-	/* Read and verify executable header. */
+	// ELF 헤더 읽기 및 유효성 검사
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
 			|| ehdr.e_type != 2
@@ -531,7 +530,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 	}
 
-	/* Read program headers. */
+	//Program Header 읽기 & LOAD 세그먼트 처리
 	file_ofs = ehdr.e_phoff;
 	for (i = 0; i < ehdr.e_phnum; i++) {
 		struct Phdr phdr;
@@ -722,17 +721,31 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 /* Create a minimal stack by mapping a zeroed page at the USER_STACK */
 static bool
-setup_stack (struct intr_frame *if_) {
-	uint8_t *kpage;
+setup_stack(struct intr_frame *if_)
+{
 	bool success = false;
 
-	kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-	if (kpage != NULL) {
-		success = install_page (((uint8_t *) USER_STACK) - PGSIZE, kpage, true);
+	// 스택은 아래로 성장하므로, USER_STACK에서 PGSIZE만큼 아래로 내린 지점에서 페이지를 생성한다.
+	void *stack_bottom = (void *)(((uint8_t *)USER_STACK) - PGSIZE);
+
+	/* TODO: Map the stack on stack_bottom and claim the page immediately.
+	 * TODO: If success, set the rsp accordingly.
+	 * TODO: You should mark the page is stack. */
+	/* TODO: stack_bottom에 스택을 매핑하고 페이지를 즉시 요청하세요.
+	 * TODO: 성공하면, rsp를 그에 맞게 설정하세요.
+	 * TODO: 페이지가 스택임을 표시해야 합니다. */
+	/* TODO: Your code goes here */
+
+	// 1) stack_bottom에 페이지를 하나 할당받는다.
+	if (vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, 1))
+	// VM_MARKER_0: 스택이 저장된 메모리 페이지임을 식별하기 위해 추가
+	// writable: argument_stack()에서 값을 넣어야 하니 True
+	{
+		// 2) 할당 받은 페이지에 바로 물리 프레임을 매핑한다.
+		success = vm_claim_page(stack_bottom);
 		if (success)
+			// 3) rsp를 변경한다. (argument_stack에서 이 위치부터 인자를 push한다.)
 			if_->rsp = USER_STACK;
-		else
-			palloc_free_page (kpage);
 	}
 	return success;
 }
@@ -765,6 +778,20 @@ lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+
+	struct lazy_load_arg *lazy_load_arg = (struct lazy_load_arg *) aux;
+
+	// 파일의 position을 ofs로 지정
+	file_seek(lazy_load_arg->file, lazy_load_arg->ofs);
+	// 파일을 read_bytes 만큼 물리 프레임에 읽어 들임
+	if (file_read(lazy_load_arg->file, page->frame->kva, lazy_load_arg->read_bytes) != (int)(lazy_load_arg->read_bytes)) {
+		palloc_free_page(page->frame->kva);
+		return false;
+	}
+
+	// 다 읽은 지점부터 zero_bytes만큼 0으로 채운다
+	memset(page->frame->kva + lazy_load_arg->read_bytes, 0, lazy_load_arg->zero_bytes);
+	return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -781,30 +808,46 @@ lazy_load_segment (struct page *page, void *aux) {
  *
  * Return true if successful, false if a memory allocation error
  * or disk read error occurs. */
-static bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage,
-		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
-	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
-	ASSERT (pg_ofs (upage) == 0);
-	ASSERT (ofs % PGSIZE == 0);
+/* 
+	file : 내용이 담긴 파일 객체
+	ofs : 이 페이지에서 읽기 시작할 위치
+	read_bytes : 이 페이지에서 읽어야 하는 바이트 수
+	zero_bytes : 이 페이지에서 read_bytes 만큼 읽고 공간이 남아 0으로 채워야 하는 바이트 수
+	lazy
+*/
+static bool load_segment 
+	(struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
+	
+	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0); 		// read_bytes + zero_bytes가 페이지 크기(PGSIZE)의 배수인지 확인
+	ASSERT (pg_ofs (upage) == 0);							// upage가 페이지 정렬되어 있는지 확인
+	ASSERT (ofs % PGSIZE == 0);								// ofs가 페이지 정렬되어 있는지 확인
 
-	while (read_bytes > 0 || zero_bytes > 0) {
-		/* Do calculate how to fill this page.
-		 * We will read PAGE_READ_BYTES bytes from FILE
-		 * and zero the final PAGE_ZERO_BYTES bytes. */
+	while (read_bytes > 0 || zero_bytes > 0) {  		// read_bytes와 zero_bytes가 0보다 큰 동안 루프를 실행
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux))
+		
+		// vm_alloc_page_with_initializer에 제공할 aux 인수로 필요한 보조 값들을 설정해야 합니다.
+		// loading을 위해 필요한 정보를 포함하는 구조체를 만들어야 합니다.
+		struct lazy_load_arg *lazy_load_arg = (struct lazy_load_arg *)malloc(sizeof(struct lazy_load_arg));
+		lazy_load_arg->file = file;					 // 내용이 담긴 파일 객체
+		lazy_load_arg->ofs = ofs;					 // 이 페이지에서 읽기 시작할 위치
+
+		lazy_load_arg->read_bytes = page_read_bytes; // 이 페이지에서 읽어야 하는 바이트 수
+		lazy_load_arg->zero_bytes = page_zero_bytes; // 이 페이지에서 read_bytes만큼 읽고 공간이 남아 0으로 채워야 하는 바이트 수
+		
+		
+		// vm_alloc_page_with_initializer를 호출하여 대기 중인 객체를 생성합니다.
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, lazy_load_arg))
 			return false;
 
 		/* Advance. */
+		// 다음 반복을 위하여 읽어들인 만큼 값을 갱신합니다.
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += page_read_bytes;
+
 	}
 	return true;
 }

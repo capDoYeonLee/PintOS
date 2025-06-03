@@ -57,6 +57,8 @@ exception_init (void) {
 	/* Most exceptions can be handled with interrupts turned on.
 	   We need to disable interrupts for page faults because the
 	   fault address is stored in CR2 and needs to be preserved. */
+	// init.c 내부에서 exception_init()을 호출하고 
+	// 여기서 page_fault를 예외 번호 14번으로 등록하고 page fault가 발생하면 해당 코드가 page_fault()를 호출하도록 함.
 	intr_register_int (14, 0, INTR_OFF, page_fault, "#PF Page-Fault Exception");
 }
 
@@ -116,8 +118,7 @@ kill (struct intr_frame *f) {
    can find more information about both of these in the
    description of "Interrupt 14--Page Fault Exception (#PF)" in
    [IA32-v3a] section 5.15 "Exception and Interrupt Reference". */
-static void
-page_fault (struct intr_frame *f) {
+static void page_fault (struct intr_frame *f) {
 	bool not_present;  /* True: not-present page, false: writing r/o page. */
 	bool write;        /* True: access was write, false: access was read. */
 	bool user;         /* True: access by user, false: access by kernel. */
@@ -128,6 +129,7 @@ page_fault (struct intr_frame *f) {
 	   data.  It is not necessarily the address of the instruction
 	   that caused the fault (that's f->rip). */
 
+	// 이 레지스터는 폴트가 발생한 주소 (accessed virtual address)를 담고있음
 	fault_addr = (void *) rcr2();
 
 	/* Turn interrupts back on (they were only off so that we could
@@ -136,9 +138,9 @@ page_fault (struct intr_frame *f) {
 
 
 	/* Determine cause. */
-	not_present = (f->error_code & PF_P) == 0;
-	write = (f->error_code & PF_W) != 0;
-	user = (f->error_code & PF_U) != 0;
+	not_present = (f->error_code & PF_P) == 0;  // 0이면 해당 페이지가 존재하지 않음(not-present)
+	write = (f->error_code & PF_W) != 0;        // 1이면 쓰기(write) 접근이었음
+	user = (f->error_code & PF_U) != 0;         // 1이면 유저 모드에서 발생한 접근이었음
 
 #ifdef VM
 	/* For project 3 and later. */

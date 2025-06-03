@@ -2,6 +2,8 @@
 #define VM_VM_H
 #include <stdbool.h>
 #include "threads/palloc.h"
+#include "hash.h"
+
 
 enum vm_type {
 	/* page not initialized */
@@ -36,19 +38,16 @@ struct thread;
 
 #define VM_TYPE(type) ((type) & 7)
 
-/* The representation of "page".
- * This is kind of "parent class", which has four "child class"es, which are
- * uninit_page, file_page, anon_page, and page cache (project4).
- * DO NOT REMOVE/MODIFY PREDEFINED MEMBER OF THIS STRUCTURE. */
+
 struct page {
-	const struct page_operations *operations;
-	void *va;              /* Address in terms of user space */
-	struct frame *frame;   /* Back reference for frame */
+	const struct page_operations *operations; // 페이지 타입에 따른 동작 집합
+	void *va;              // 이 페이지가 매핑되는 유저 가상 주소
+	struct frame *frame;   // 이 페이지가 현재 물리 메모리에 있다면, 그 프레임 정보를 가리킴
 
-	/* Your implementation */
+	struct hash_elem hash_elem;
 
-	/* Per-type data are binded into the union.
-	 * Each function automatically detects the current union */
+
+	// 페이지의 종류별 구현체. anon, file, uninit 중 하나만 사용됨. 즉 유형에 따라 구조가 달라지는 확장 필드
 	union {
 		struct uninit_page uninit;
 		struct anon_page anon;
@@ -61,14 +60,14 @@ struct page {
 
 /* The representation of "frame" */
 struct frame {
-	void *kva;
-	struct page *page;
+	void *kva;            // 커널 가상 주소 (물리 메모리에 있는 주소)
+	struct page *page;    // 이 프레임이 어떤 가상 페이지와 연결되어 있는지
 };
+// 위 frame 구조를 통해 역방향 매핑이 가능해져서, evict(스왑 아웃) 시 어떤 가상 페이지를 내보내야 할지 알 수 있음
 
-/* The function table for page operations.
- * This is one way of implementing "interface" in C.
- * Put the table of "method" into the struct's member, and
- * call it whenever you needed. */
+
+
+//페이지 타입에 따른 행동을 캡슐화
 struct page_operations {
 	bool (*swap_in) (struct page *, void *);
 	bool (*swap_out) (struct page *);
@@ -85,6 +84,7 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	struct hash spt_hash;
 };
 
 #include "threads/thread.h"
@@ -109,4 +109,4 @@ void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 
-#endif  /* VM_VM_H */
+#en
