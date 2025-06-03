@@ -45,6 +45,7 @@ struct page {
 	struct frame *frame;   // 이 페이지가 현재 물리 메모리에 있다면, 그 프레임 정보를 가리킴
 
 	struct hash_elem hash_elem;
+	bool writable;
 
 
 	// 페이지의 종류별 구현체. anon, file, uninit 중 하나만 사용됨. 즉 유형에 따라 구조가 달라지는 확장 필드
@@ -109,4 +110,4 @@ void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 
-#en
+#endif /* VM_VM_H */

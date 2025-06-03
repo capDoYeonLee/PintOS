@@ -1,8 +1,15 @@
 /* vm.c: Generic interface for virtual memory objects. */
 
+// #include "threads/malloc.h"
+// #include "vm/vm.h"
+// #include "vm/inspect.h"
+
 #include "threads/malloc.h"
+#include "threads/thread.h"
+#include "threads/mmu.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "userprog/process.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -186,7 +193,7 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
         return false;
 
     if (is_kernel_vaddr(addr))
-        return false;
+		return false;
 
     if (not_present) // 접근한 메모리의 physical page가 존재하지 않은 경우
     {

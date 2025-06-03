@@ -783,6 +783,7 @@ lazy_load_segment (struct page *page, void *aux) {
 
 	// 파일의 position을 ofs로 지정
 	file_seek(lazy_load_arg->file, lazy_load_arg->ofs);
+	
 	// 파일을 read_bytes 만큼 물리 프레임에 읽어 들임
 	if (file_read(lazy_load_arg->file, page->frame->kva, lazy_load_arg->read_bytes) != (int)(lazy_load_arg->read_bytes)) {
 		palloc_free_page(page->frame->kva);
