@@ -199,10 +199,10 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED, bool us
 
 	//printf("vm_try_handle_fault entry point \n");
 
-    // if (addr == NULL) {
-	// 	printf("vm_try_handle_fault addr\n");
-    //     return false;
-	// }
+    if (addr == NULL) {
+		//printf("vm_try_handle_fault addr\n");
+        return false;
+	}
 
     if (is_kernel_vaddr(addr)) {
 		//printf("vm_try_handle_fault is kernel vaddr \n");
@@ -213,9 +213,10 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED, bool us
         //printf("vm_try_handle_fault not present\n");
 		page = spt_find_page(spt, addr);
         
-		// if (page == NULL)
-		// 	printf("vm try handle fault page null\n");
-        //     return false;
+		if (page == NULL){
+			// printf("vm try handle fault page null\n");
+            return false;
+		}
         
 		if (write == 1 && page->writable == 0) {// write 불가능한 페이지에 write 요청한 경우
 			//printf("vm try handle fault write entry \n");
@@ -339,13 +340,54 @@ void supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 
 /* Copy supplemental page table from src to dst */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
+supplemental_page_table_copy (struct supplemental_page_table *child_spt UNUSED,
+		struct supplemental_page_table *parent_spt UNUSED) {
+	
+	struct hash_iterator i;
+	hash_first(&i, &parent_spt->spt_hash);
+	while(hash_next(&i)) {
+		// parent 정보
+		struct page *parent_page = hash_entry(hash_cur(&i), struct page, hash_elem);
+		enum vm_type type = parent_page->operations->type;
+		void *upage = parent_page->va;
+		bool writable = parent_page->writable;
+
+		// type == uninit
+		if (type == VM_UNINIT) {
+			vm_initializer *init = parent_page->uninit.init;
+			void *aux = parent_page->uninit.aux;
+			vm_alloc_page_with_initializer(VM_ANON, upage, writable, init, aux);
+			continue;
+		} 
+
+		// type != uninit
+		if (!vm_alloc_page(type, upage, writable)) { // uninit page 생성 & 초기화
+			return false;
+		}
+
+		// vm_claim_page으로 요청해서 매핑 & 페이지 타입에 맞게 초기화
+		if(!vm_claim_page(upage)) {
+			return false;
+		}
+
+		//매핑된 프레임에 내용 로딩
+		struct page *child_page = spt_find_page(child_spt, upage);
+		memcpy(child_page->frame->kva, parent_page->frame->kva, PGSIZE);
+	}
+	return true;
 }
+void hash_page_destroy(struct hash_elem *e, void *aux)
+{
+    struct page *page = hash_entry(e, struct page, hash_elem);
+    destroy(page);
+    free(page);
+}
+
 
 /* Free the resource hold by the supplemental page table */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	hash_clear(&spt->spt_hash, hash_page_destroy);
 }

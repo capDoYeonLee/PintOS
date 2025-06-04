@@ -249,7 +249,6 @@ process_exec (void *f_name) {
 
 	if (!success)
 	{
-		printf("process_exec load fail \n");
 		palloc_free_page(file_name);
 		return -1;
 	}
@@ -561,7 +560,7 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 	/* Open executable file. */
 	file = filesys_open (file_name);
 	if (file == NULL) {
-		printf ("load: %s: open failed\n", file_name);
+		//printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
 
