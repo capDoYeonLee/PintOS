@@ -71,59 +71,62 @@ syscall_init (void) {
 }
 
 /* The main system call interface */
-void
-syscall_handler (struct intr_frame *f UNUSED) {
-	int syscall_number = f->R.rax;
-
-	switch (syscall_number) {
-		case SYS_OPEN:
-			f->R.rax = open(f->R.rdi);
-			break;
-		case SYS_HALT:
-			halt();
-			break;
-		case SYS_EXIT:
-			exit(f->R.rdi);
-			break;
-		case SYS_FORK:
-			f->R.rax = fork(f->R.rdi, f);
-			break;
-		case SYS_EXEC:
-			f->R.rax = exec(f->R.rdi);
-			break;
-		case SYS_WAIT:
-			f->R.rax = wait(f->R.rdi);
-			break;
-		case SYS_CREATE:
-			f->R.rax = create(f->R.rdi, f->R.rsi);
-			break;
-		case SYS_REMOVE:
-			f->R.rax = remove(f->R.rdi);
-			break;
-		case SYS_FILESIZE:
-			f->R.rax = filesize(f->R.rdi);
-			break;
-		case SYS_READ:
-			f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
-			break;
-		case SYS_WRITE:
-			f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
-			break;
-		case SYS_SEEK:
-			seek(f->R.rdi, f->R.rsi);
-			break;
-		case SYS_TELL:
-			f->R.rax = tell(f->R.rdi);
-			break;
-		case SYS_CLOSE:
-			close(f->R.rdi);
-			break;
-		// case SYS_MMAP:
-		// 	f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
-		// 	break;
-		// case SYS_MUNMAP:
-		// 	munmap(f->R.rdi);
-		// 	break;
+void syscall_handler(struct intr_frame *f UNUSED)
+{
+	int syscall_n = f->R.rax; /* 시스템 콜 넘버 */
+#ifdef VM
+	thread_current()->rsp = f->rsp;
+#endif
+	switch (syscall_n)
+	{
+	case SYS_HALT:
+		halt();
+		break;
+	case SYS_EXIT:
+		exit(f->R.rdi);
+		break;
+	case SYS_FORK:
+		f->R.rax = fork(f->R.rdi, f);
+		break;
+	case SYS_EXEC:
+		f->R.rax = exec(f->R.rdi);
+		break;
+	case SYS_WAIT:
+		f->R.rax = wait(f->R.rdi);
+		break;
+	case SYS_CREATE:
+		f->R.rax = create(f->R.rdi, f->R.rsi);
+		break;
+	case SYS_REMOVE:
+		f->R.rax = remove(f->R.rdi);
+		break;
+	case SYS_OPEN:
+		f->R.rax = open(f->R.rdi);
+		break;
+	case SYS_FILESIZE:
+		f->R.rax = filesize(f->R.rdi);
+		break;
+	case SYS_READ:
+		f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
+		break;
+	case SYS_WRITE:
+		f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
+		break;
+	case SYS_SEEK:
+		seek(f->R.rdi, f->R.rsi);
+		break;
+	case SYS_TELL:
+		f->R.rax = tell(f->R.rdi);
+		break;
+	case SYS_CLOSE:
+		close(f->R.rdi);
+		break;
+	// case SYS_MMAP:
+	// 	f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+	// 	break;
+	// case SYS_MUNMAP:
+	// 	munmap(f->R.rdi);
+	// 	break;
 	}
 }
 
@@ -133,7 +136,7 @@ void check_address(void *addr)
 	
 	if (!is_user_vaddr(addr)) exit(-1);
 	
-	if (pml4_get_page(thread_current()->pml4, addr) == NULL)exit(-1);
+	if (pml4_get_page(thread_current()->pml4, addr) == NULL) exit(-1);
 }
 
 int wait(int pid) {

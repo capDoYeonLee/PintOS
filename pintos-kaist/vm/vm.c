@@ -11,6 +11,7 @@
 #include "vm/inspect.h"
 #include "userprog/process.h"
 
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 // init.c에서 vm_init() 호출
@@ -60,10 +61,12 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writab
 
 	ASSERT (VM_TYPE(type) != VM_UNINIT)
 
-	struct supplemental_page_table *spt = &thread_current ()->spt;
+	struct supplemental_page_table *spt = &thread_current()->spt;
 
 	/* Check wheter the upage is already occupied or not. */
+	// upage가 이미 사용 중인지 확인합니다.
 	if (spt_find_page (spt, upage) == NULL) {
+		//printf("vm_alloc_page_with_initializer 진입점 확인\n");
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
@@ -90,20 +93,24 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writab
 		
 	}
 err:
+	//printf("vm_alloc_page_with_initializer 에러 확인 지점\n");
 	return false;
 }
 
 /* Find VA from spt and return page. On error, return NULL. */
 //보조 페이지 테이블(SPT)에서 해당 VA(가상 주소)에 해당하는 페이지를 찾아 반환.
 	// 내부적으로 해시 테이블을 사용해서 va 주소 기반으로 검색합니다.
-struct page * spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
+struct page *spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
+	
 	struct page *page = NULL;
 	
-	page = malloc(sizeof(struct page));
+	page = (struct page *)malloc(sizeof(struct page));
 	struct hash_elem *e;
 
-	page -> va = va;
-	e = hash_find(&spt, &page->hash_elem);
+	//page -> va = va;
+	page->va = pg_round_down(va); // page의 시작 주소 할당
+	e = hash_find(&spt->spt_hash, &page->hash_elem);
+	free(page);
 
 	return e != NULL ? hash_entry(e, struct page, hash_elem) : NULL;
 }
@@ -113,8 +120,8 @@ struct page * spt_find_page (struct supplemental_page_table *spt UNUSED, void *v
 이미 존재하면 false 반환.
 보통 hash_insert() 등의 해시 함수로 구현. */
 bool spt_insert_page (struct supplemental_page_table *spt UNUSED, struct page *page UNUSED) {
-	
-	return hash_insert(&spt, &page->hash_elem) == NULL ? true : false;
+	//printf("spt_insert_page entry point \n");
+	return hash_insert(&spt->spt_hash, &page->hash_elem) == NULL ? true : false;
 }
 
 // vm_dealloc_page()를 호출해서 페이지와 프레임을 해제합니다.
@@ -159,6 +166,7 @@ static struct frame * vm_get_frame (void) {
 
 	frame = malloc(sizeof(struct frame));  // frame 할당
 	frame->kva = kva;					   // 프레임 멤버 초기화
+	frame->page = NULL;
 
 
 	ASSERT (frame != NULL);
@@ -184,29 +192,69 @@ static bool vm_handle_wp (struct page *page UNUSED) {
 2. write == true && page가 write_protected: → vm_handle_wp() 호출 
 3. 유효하지 않은 접근 (예: NULL, 커널 주소, 잘못된 위치): → 실패 반환
 */ //여기가 호출됨.
-bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
-                         bool user UNUSED, bool write UNUSED, bool not_present UNUSED)
-{
-    struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
-    struct page *page = NULL;
-    if (addr == NULL)
-        return false;
+bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED, bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
+    
+	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
+	struct page *page = NULL;
 
-    if (is_kernel_vaddr(addr))
+	//printf("vm_try_handle_fault entry point \n");
+
+    // if (addr == NULL) {
+	// 	printf("vm_try_handle_fault addr\n");
+    //     return false;
+	// }
+
+    if (is_kernel_vaddr(addr)) {
+		//printf("vm_try_handle_fault is kernel vaddr \n");
 		return false;
+	}
 
-    if (not_present) // 접근한 메모리의 physical page가 존재하지 않은 경우
-    {
-        /* TODO: Validate the fault */
-        page = spt_find_page(spt, addr);
-        if (page == NULL)
+    if (not_present) {// 접근한 메모리의 physical page가 존재하지 않은 경우
+        //printf("vm_try_handle_fault not present\n");
+		page = spt_find_page(spt, addr);
+        
+		// if (page == NULL)
+		// 	printf("vm try handle fault page null\n");
+        //     return false;
+        
+		if (write == 1 && page->writable == 0) {// write 불가능한 페이지에 write 요청한 경우
+			//printf("vm try handle fault write entry \n");
             return false;
-        if (write == 1 && page->writable == 0) // write 불가능한 페이지에 write 요청한 경우
-            return false;
-        return vm_do_claim_page(page);
+		}
+        
+		return vm_do_claim_page(page);
     }
+	//printf("vm try handle fault not_present \n");
     return false;
 }
+// test
+// bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr ,
+// 						 bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
+// 	// ASSERT(addr!=NULL);
+// 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
+	
+// 	struct page *page = spt_find_page(spt, addr);
+
+// 	// 지금 page가 null값이 들어옴.
+
+// 	/* TODO: Validate the fault */
+// 	/* bogus 폴트인지? 스택확장 폴트인지?
+// 	 * SPT 뒤져서 존재하면 bogus 폴트!!
+// 	 * addr이 유저 스택 시작 주소 + 1MB를 넘지 않으면 스택확장 폴트
+// 	 * 찐폴트면 false 리턴
+// 	 * 아니면 vm_do_claim_page 호출	*/
+// 	if(page == NULL)
+// 		printf("vm_try_handle_fault page null \n");
+// 		return false;
+// 	/* 스택확장 폴트에서 valid를 확인하려면 유저 스택 시작 주소 + 1MB를 넘는지 확인
+// 	 * addr = thread 내의 user_rsp
+// 	 * addr은 user_rsp보다 크면 안됨
+// 	 * stack_growth 호출해야함 */
+
+// 	/* TODO: Your code goes here */
+// 	printf("vm_try_handle_fault 진입점\n");
+// 	return vm_do_claim_page(page);
+// }
 
 /*
 💡 질문.왜 vm_try_handle_fault()가 중요한가?
@@ -228,9 +276,10 @@ bool vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
 
+	
 	page = spt_find_page(&thread_current()->spt, va);
 	if (page == NULL) return false;
-
+	//printf("vm_clain_page entry point \n");
 	return vm_do_claim_page (page);
 }
 
@@ -241,8 +290,9 @@ MMU에 해당 VA와 프레임 물리 주소를 매핑
 
 swap_in() 호출하여 실제 페이지 데이터 복원 */
 static bool vm_do_claim_page (struct page *page) {
-	struct frame *frame = vm_get_frame ();
 
+	struct frame *frame = vm_get_frame ();
+	
 	/* Set links */
 	frame->page = page;
 	page->frame = frame;
@@ -251,7 +301,8 @@ static bool vm_do_claim_page (struct page *page) {
 	struct thread *curr = thread_current();
 	pml4_set_page(curr->pml4, page->va, frame->kva, page->writable);
 
-	return swap_in (page, frame->kva);
+	//printf("vm do claim page check point\n");
+	return swap_in(page, frame->kva);
 }
 
 // SPT에 저장된 page 구조체에 대한 해시값을 계산해주는 함수
@@ -283,7 +334,7 @@ kill: 종료 시 모든 페이지 자원 해제, 변경된 내용 디스크에 �
 /* Initialize new supplemental page table */
 // process.c 내부 새로운 스레드가 시작될 때 __do_fork()에서 호출
 void supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
-	hash_init(spt, page_hash, page_less, NULL); // hash table 초기화
+	hash_init(&spt->spt_hash, page_hash, page_less, NULL); // hash table 초기화
 }
 
 /* Copy supplemental page table from src to dst */

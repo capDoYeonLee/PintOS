@@ -20,6 +20,7 @@
 #include "intrinsic.h"
 #ifdef VM
 #include "vm/vm.h"
+#include "userprog/syscall.h"
 #endif
 
 static void process_cleanup (void);
@@ -238,11 +239,22 @@ process_exec (void *f_name) {
 	int count = 0;
 
 	//아래 코드가 무엇을 의미하는거지?
-	for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) parse[count++] = token;
+	for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) 
+		parse[count++] = token;
 
 	/* And then load the binary */
+	lock_acquire(&filesys_lock);
 	success = load(file_name, &_if);
+	lock_release(&filesys_lock);
 
+	if (!success)
+	{
+		printf("process_exec load fail \n");
+		palloc_free_page(file_name);
+		return -1;
+	}
+
+	
 	// argument passing
 	argument_stack(parse, count, &_if.rsp); 
 	_if.R.rdi = count;
@@ -253,55 +265,90 @@ process_exec (void *f_name) {
 
 	/* If load failed, quit. */
 	palloc_free_page (file_name);
- 	if (!success)
-		return -1;
 
 	/* Start switched process. */
 	do_iret (&_if);
 	NOT_REACHED ();
 }
 
-void argument_stack(char **parse, int count, void **rsp) {
-    // printf("🔍 Parsed arguments (count = %d):\n", count);
-    // for (int i = 0; i < count; i++) {
-    //     printf("  parse[%d] = \"%s\"\n", i, parse[i]);
-    // }
+// void argument_stack(char **parse, int count, void **rsp) {
+//     // printf("🔍 Parsed arguments (count = %d):\n", count);
+//     // for (int i = 0; i < count; i++) {
+//     //     printf("  parse[%d] = \"%s\"\n", i, parse[i]);
+//     // }
 
-    char *sp = (char *)(*rsp);  // rsp를 char*로 캐스팅해서 계산용으로 사용
+//     char *sp = (char *)(*rsp);  // rsp를 char*로 캐스팅해서 계산용으로 사용
 
-    // 문자열을 역순으로 복사
-    for (int i = count - 1; i >= 0; i--) {
-        size_t len = strlen(parse[i]) + 1;  // 널 문자까지 포함
-        sp -= len;
-        memcpy(sp, parse[i], len);
-        parse[i] = sp;  // 문자열이 복사된 주소 저장
-    }
+//     // 문자열을 역순으로 복사
+//     for (int i = count - 1; i >= 0; i--) {
+//         size_t len = strlen(parse[i]) + 1;  // 널 문자까지 포함
+//         sp -= len;
+//         memcpy(sp, parse[i], len);
+//         parse[i] = sp;  // 문자열이 복사된 주소 저장
+//     }
 
-    // 8바이트 정렬
-    uintptr_t align = (uintptr_t)sp % 8;
-    if (align != 0) {
-        sp -= align;
-        memset(sp, 0, align);
-    }
+//     // 8바이트 정렬
+//     uintptr_t align = (uintptr_t)sp % 8;
+//     if (align != 0) {
+//         sp -= align;
+//         memset(sp, 0, align);
+//     }
 
-    // argv[count] = NULL
-    sp -= sizeof(char *);
-    memset(sp, 0, sizeof(char *));
+//     // argv[count] = NULL
+//     sp -= sizeof(char *);
+//     memset(sp, 0, sizeof(char *));
 
-    // argv[i] 주소 push
-    for (int i = count - 1; i >= 0; i--) {
-        sp -= sizeof(char *);
-        memcpy(sp, &parse[i], sizeof(char *));
-    }
+//     // argv[i] 주소 push
+//     for (int i = count - 1; i >= 0; i--) {
+//         sp -= sizeof(char *);
+//         memcpy(sp, &parse[i], sizeof(char *));
+//     }
 
-    // fake return address (0)
-    sp -= sizeof(void *);
-    memset(sp, 0, sizeof(void *));
+//     // fake return address (0)
+//     sp -= sizeof(void *);
+//     memset(sp, 0, sizeof(void *));
 
-    // 최종 rsp 업데이트
-    *rsp = (void *)sp;
+//     // 최종 rsp 업데이트
+//     *rsp = (void *)sp;
+// }
+
+
+void argument_stack(char **parse, int count, void **rsp) // 주소를 전달받았으므로 이중 포인터 사용
+{
+	// 프로그램 이름, 인자 문자열 push
+	for (int i = count - 1; i > -1; i--)
+	{
+		for (int j = strlen(parse[i]); j > -1; j--)
+		{
+			(*rsp)--;					  // 스택 주소 감소
+			**(char **)rsp = parse[i][j]; // 주소에 문자 저장
+		}
+		parse[i] = *(char **)rsp; // parse[i]에 현재 rsp의 값 저장해둠(지금 저장한 인자가 시작하는 주소값)
+	}
+
+	// 정렬 패딩 push
+	int padding = (int)*rsp % 8;
+	for (int i = 0; i < padding; i++)
+	{
+		(*rsp)--;
+		**(uint8_t **)rsp = 0; // rsp 직전까지 값 채움
+	}
+
+	// 인자 문자열 종료를 나타내는 0 push
+	(*rsp) -= 8;
+	**(char ***)rsp = 0;
+
+	// 각 인자 문자열의 주소 push
+	for (int i = count - 1; i > -1; i--)
+	{
+		(*rsp) -= 8; // 다음 주소로 이동
+		**(char ***)rsp = parse[i];
+	}
+
+	// return address push
+	(*rsp) -= 8;
+	**(void ***)rsp = 0;
 }
-
 
 // 인자로 들어온 file에 대한 fd값을 할당. 
 int process_add_file(struct file *f) {
@@ -723,29 +770,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack(struct intr_frame *if_)
 {
+	uint8_t *kpage;
 	bool success = false;
 
-	// 스택은 아래로 성장하므로, USER_STACK에서 PGSIZE만큼 아래로 내린 지점에서 페이지를 생성한다.
-	void *stack_bottom = (void *)(((uint8_t *)USER_STACK) - PGSIZE);
-
-	/* TODO: Map the stack on stack_bottom and claim the page immediately.
-	 * TODO: If success, set the rsp accordingly.
-	 * TODO: You should mark the page is stack. */
-	/* TODO: stack_bottom에 스택을 매핑하고 페이지를 즉시 요청하세요.
-	 * TODO: 성공하면, rsp를 그에 맞게 설정하세요.
-	 * TODO: 페이지가 스택임을 표시해야 합니다. */
-	/* TODO: Your code goes here */
-
-	// 1) stack_bottom에 페이지를 하나 할당받는다.
-	if (vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, 1))
-	// VM_MARKER_0: 스택이 저장된 메모리 페이지임을 식별하기 위해 추가
-	// writable: argument_stack()에서 값을 넣어야 하니 True
+	kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+	if (kpage != NULL)
 	{
-		// 2) 할당 받은 페이지에 바로 물리 프레임을 매핑한다.
-		success = vm_claim_page(stack_bottom);
+		success = install_page(((uint8_t *)USER_STACK) - PGSIZE, kpage, true);
 		if (success)
-			// 3) rsp를 변경한다. (argument_stack에서 이 위치부터 인자를 push한다.)
 			if_->rsp = USER_STACK;
+		else
+			palloc_free_page(kpage);
 	}
 	return success;
 }
@@ -773,8 +808,7 @@ install_page (void *upage, void *kpage, bool writable) {
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
 
-static bool
-lazy_load_segment (struct page *page, void *aux) {
+bool lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
@@ -854,16 +888,35 @@ static bool load_segment
 }
 
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
+// USER_STACK에서 스택의 PAGE를 생성합니다. 성공하면 true를 반환합니다.
 static bool
-setup_stack (struct intr_frame *if_) {
+setup_stack(struct intr_frame *if_)
+{
 	bool success = false;
-	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
+
+	// 스택은 아래로 성장하므로, USER_STACK에서 PGSIZE만큼 아래로 내린 지점에서 페이지를 생성한다.
+	void *stack_bottom = (void *)(((uint8_t *)USER_STACK) - PGSIZE);
 
 	/* TODO: Map the stack on stack_bottom and claim the page immediately.
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
+	/* TODO: stack_bottom에 스택을 매핑하고 페이지를 즉시 요청하세요.
+	 * TODO: 성공하면, rsp를 그에 맞게 설정하세요.
+	 * TODO: 페이지가 스택임을 표시해야 합니다. */
 	/* TODO: Your code goes here */
 
+	// 1) stack_bottom에 페이지를 하나 할당받는다.
+	if (vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, 1))
+	// VM_MARKER_0: 스택이 저장된 메모리 페이지임을 식별하기 위해 추가
+	// writable: argument_stack()에서 값을 넣어야 하니 True
+	{
+		// 2) 할당 받은 페이지에 바로 물리 프레임을 매핑한다.
+		//printf("setup stack entry point \n");
+		success = vm_claim_page(stack_bottom);
+		if (success)
+			// 3) rsp를 변경한다. (argument_stack에서 이 위치부터 인자를 push한다.)
+			if_->rsp = USER_STACK;
+	}
 	return success;
 }
 #endif /* VM */

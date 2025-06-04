@@ -25,10 +25,12 @@ static const struct page_operations uninit_ops = {
 /* DO NOT MODIFY this function */
 void
 uninit_new (struct page *page, void *va, vm_initializer *init,
-		enum vm_type type, void *aux,
-		bool (*initializer)(struct page *, enum vm_type, void *)) {
+			enum vm_type type, void *aux,	
+			bool (*initializer)(struct page *, enum vm_type, void *)) {
+	
 	ASSERT (page != NULL);
 
+	//printf("uninit_new 진입점 확인 \n");
 	*page = (struct page) {
 		.operations = &uninit_ops,
 		.va = va,
@@ -53,6 +55,7 @@ uninit_initialize (struct page *page, void *kva) {
 	vm_initializer *init = uninit->init;
 	void *aux = uninit->aux;
 
+	//printf("uninit_initialize entry point \n");
 	/* TODO: You may need to fix this function. */
 	return uninit->page_initializer (page, uninit->type, kva) &&
 		(init ? init (page, aux) : true);

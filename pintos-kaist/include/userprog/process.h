@@ -2,6 +2,7 @@
 #define USERPROG_PROCESS_H
 
 #include "threads/thread.h"
+#include "vm/vm.h"
 
 tid_t process_create_initd (const char *file_name);
 tid_t process_fork (const char *name, struct intr_frame *if_);
@@ -15,6 +16,8 @@ struct file *process_get_file(int fd);
 void process_close_file(int fd);
 
 struct thread *get_child_process(int pid);
+bool lazy_load_segment (struct page *page, void *aux);
+
 
 struct lazy_load_arg
 {
