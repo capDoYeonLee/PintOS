@@ -177,6 +177,7 @@ static struct frame * vm_get_frame (void) {
 /* Growing the stack. */
 // 현재 스택 영역에 없는 주소가 접근되면 스택을 자동 확장해주는 로직
 static void vm_stack_growth (void *addr UNUSED) {
+	vm_alloc_page(VM_ANON | VM_MARKER_0, pg_round_down(addr), 1);
 }
 
 /* Handle the fault on write_protected page */
@@ -197,65 +198,50 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED, bool us
 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
 	struct page *page = NULL;
 
-	//printf("vm_try_handle_fault entry point \n");
-
     if (addr == NULL) {
-		//printf("vm_try_handle_fault addr\n");
         return false;
 	}
 
     if (is_kernel_vaddr(addr)) {
-		//printf("vm_try_handle_fault is kernel vaddr \n");
 		return false;
 	}
 
     if (not_present) {// 접근한 메모리의 physical page가 존재하지 않은 경우
-        //printf("vm_try_handle_fault not present\n");
+		
+		void *rsp = f->rsp;
+		if (!user) {rsp = thread_current()->rsp;}
+
+		/* 
+		rsp - 8가 스택의 유효한 영역 내에 있고,
+		addr가 정확히 rsp - 8일 때 → 즉, PUSH 명령을 허용하는 경우
+		*/
+		if (USER_STACK - (1<<20) <= rsp -8 && rsp - 8 == addr && addr <= USER_STACK) {
+			vm_stack_growth(addr);
+		}
+
+		/* 
+		rsp and addr 모두 USER_STACK 1MB 이내를 가리키고,
+		page fualt를 발생시킨 addr이 rsp보다 크거나 같음.
+		즉 rsp보다 위쪽 user stack 주소를 접근한 경우.
+		*/
+		else if (USER_STACK - (1 << 20) <= rsp && rsp <= addr && addr <= USER_STACK) {
+			vm_stack_growth(addr);
+		}
+		
 		page = spt_find_page(spt, addr);
         
-		if (page == NULL){
-			// printf("vm try handle fault page null\n");
-            return false;
-		}
+		if (page == NULL){return false;}
         
 		if (write == 1 && page->writable == 0) {// write 불가능한 페이지에 write 요청한 경우
-			//printf("vm try handle fault write entry \n");
             return false;
 		}
         
 		return vm_do_claim_page(page);
     }
-	//printf("vm try handle fault not_present \n");
+	
     return false;
 }
-// test
-// bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr ,
-// 						 bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
-// 	// ASSERT(addr!=NULL);
-// 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
-	
-// 	struct page *page = spt_find_page(spt, addr);
 
-// 	// 지금 page가 null값이 들어옴.
-
-// 	/* TODO: Validate the fault */
-// 	/* bogus 폴트인지? 스택확장 폴트인지?
-// 	 * SPT 뒤져서 존재하면 bogus 폴트!!
-// 	 * addr이 유저 스택 시작 주소 + 1MB를 넘지 않으면 스택확장 폴트
-// 	 * 찐폴트면 false 리턴
-// 	 * 아니면 vm_do_claim_page 호출	*/
-// 	if(page == NULL)
-// 		printf("vm_try_handle_fault page null \n");
-// 		return false;
-// 	/* 스택확장 폴트에서 valid를 확인하려면 유저 스택 시작 주소 + 1MB를 넘는지 확인
-// 	 * addr = thread 내의 user_rsp
-// 	 * addr은 user_rsp보다 크면 안됨
-// 	 * stack_growth 호출해야함 */
-
-// 	/* TODO: Your code goes here */
-// 	printf("vm_try_handle_fault 진입점\n");
-// 	return vm_do_claim_page(page);
-// }
 
 /*
 💡 질문.왜 vm_try_handle_fault()가 중요한가?
