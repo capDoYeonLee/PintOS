@@ -132,11 +132,24 @@ void syscall_handler(struct intr_frame *f UNUSED)
 
 void check_address(void *addr)
 {
-	if (addr == NULL) exit(-1);
+	if (addr == NULL) {exit(-1);}
 	
-	if (!is_user_vaddr(addr)) exit(-1);
+	if (!is_user_vaddr(addr)) {exit(-1);}
 	
-	if (pml4_get_page(thread_current()->pml4, addr) == NULL) exit(-1);
+	// if (pml4_get_page(thread_current()->pml4, addr) == NULL) exit(-1);
+}
+
+static void check_writable_address(const uint64_t *addr){
+        struct thread *cur = thread_current();
+        struct page *page = spt_find_page(&cur->spt, addr);
+        if(!page->writable){
+			return false;
+		}
+		//printf("page writable is %d \n", page->writable);
+		//printf("write is %d \n", write);
+		// if (write == 1 && page->writable == 0) {
+        //     exit(-1);
+		// }
 }
 
 int wait(int pid) {
@@ -148,13 +161,17 @@ int exec(const char *cmd_line) {
 
 	char *cmd_line_copy;
 	cmd_line_copy = palloc_get_page(0);
-	if (cmd_line_copy == NULL) exit(-1);
+	if (cmd_line_copy == NULL) {
+		exit(-1);
+	}
 
 	// cmd_line을 복사한다
 	strlcpy(cmd_line_copy, cmd_line, PGSIZE);
 
     // 스레드의 이름을 변경하지 않고 바로 실행한다.
-	if (process_exec(cmd_line_copy) == -1) exit(-1);
+	if (process_exec(cmd_line_copy) == -1) {
+		exit(-1);
+	}
 }
 
 int fork(const char *thread_name, struct intr_frame *intr_frame) {
@@ -231,14 +248,13 @@ void close(int fd) {
 int read(int fd, void *buffer, unsigned size)
 {
 	check_address(buffer);
+	//check_writable_address(buffer);
 
 	char *ptr = (char *)buffer;
 	int bytes_read = 0;
 
 	lock_acquire(&filesys_lock);
-
-	//if (fd == 0) // 하드 코딩
-	if (fd == 0)
+	if (fd == STDIN_FILENO)
 	{
         
 		for (int i = 0; i < size; i++)
@@ -263,6 +279,12 @@ int read(int fd, void *buffer, unsigned size)
 			lock_release(&filesys_lock);
 			return -1;
 		}
+		struct page *page = spt_find_page(&thread_current()->spt, buffer);
+		if (page && !page->writable){
+			lock_release(&filesys_lock);
+			exit(-1);
+		}
+
 		bytes_read = file_read(file, buffer, size);
 		lock_release(&filesys_lock);
 	}

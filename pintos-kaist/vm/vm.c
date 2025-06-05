@@ -215,7 +215,7 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED, bool us
 		rsp - 8가 스택의 유효한 영역 내에 있고,
 		addr가 정확히 rsp - 8일 때 → 즉, PUSH 명령을 허용하는 경우
 		*/
-		if (USER_STACK - (1<<20) <= rsp -8 && rsp - 8 == addr && addr <= USER_STACK) {
+		if ((USER_STACK - (1<<20) <= rsp -8 && rsp - 8 == addr && addr <= USER_STACK) || (USER_STACK - (1 << 20) <= rsp && rsp <= addr && addr <= USER_STACK)) {
 			vm_stack_growth(addr);
 		}
 
@@ -224,21 +224,24 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED, bool us
 		page fualt를 발생시킨 addr이 rsp보다 크거나 같음.
 		즉 rsp보다 위쪽 user stack 주소를 접근한 경우.
 		*/
-		else if (USER_STACK - (1 << 20) <= rsp && rsp <= addr && addr <= USER_STACK) {
-			vm_stack_growth(addr);
-		}
+		// else if (USER_STACK - (1 << 20) <= rsp && rsp <= addr && addr <= USER_STACK) {
+		// 	vm_stack_growth(addr);
+		// }
 		
 		page = spt_find_page(spt, addr);
         
 		if (page == NULL){return false;}
         
-		if (write == 1 && page->writable == 0) {// write 불가능한 페이지에 write 요청한 경우
+		// write 불가능한 페이지에 write 요청한 경우
+		// printf("write : %d \n", write);
+		// printf("page->writable : %d \n", page->writable); 
+		// printf("\n");
+		if (write == 1 && page->writable == 0) {
             return false;
 		}
         
 		return vm_do_claim_page(page);
     }
-	
     return false;
 }
 
