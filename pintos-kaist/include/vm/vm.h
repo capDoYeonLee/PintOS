@@ -46,6 +46,7 @@ struct page {
 
 	struct hash_elem hash_elem;
 	bool writable;
+	int mapped_page_count; // file backed page인 경우, 매핑에 사용한 페이지 개수
 
 
 	// 페이지의 종류별 구현체. anon, file, uninit 중 하나만 사용됨. 즉 유형에 따라 구조가 달라지는 확장 필드

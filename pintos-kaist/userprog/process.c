@@ -95,7 +95,9 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	// 자식이 먼저 sema_up을 하면 진행
 	sema_down(&child->load_sema);
 
-
+	if (child->exit_status == TID_ERROR) {
+		return TID_ERROR;
+	}
 	return tid;
 }
 
@@ -195,9 +197,12 @@ __do_fork (void *aux) {
 	// 복사 file descript table
 	for (int i =0; i<FDT_COUNT_LIMIT; i++){
 		struct file *file = parent->fdt[i];
-		if (file == NULL) continue;
-		if (file > 2) file = file_duplicate(file);
-
+		if (file == NULL) {
+			continue;
+		}
+		if (file > 2) {
+			file = file_duplicate(file);
+		}
 		current->fdt[i] = file;
 	}
 	current->next_fd = parent->next_fd;
@@ -270,47 +275,6 @@ process_exec (void *f_name) {
 	NOT_REACHED ();
 }
 
-// void argument_stack(char **parse, int count, void **rsp) {
-//     // printf("🔍 Parsed arguments (count = %d):\n", count);
-//     // for (int i = 0; i < count; i++) {
-//     //     printf("  parse[%d] = \"%s\"\n", i, parse[i]);
-//     // }
-
-//     char *sp = (char *)(*rsp);  // rsp를 char*로 캐스팅해서 계산용으로 사용
-
-//     // 문자열을 역순으로 복사
-//     for (int i = count - 1; i >= 0; i--) {
-//         size_t len = strlen(parse[i]) + 1;  // 널 문자까지 포함
-//         sp -= len;
-//         memcpy(sp, parse[i], len);
-//         parse[i] = sp;  // 문자열이 복사된 주소 저장
-//     }
-
-//     // 8바이트 정렬
-//     uintptr_t align = (uintptr_t)sp % 8;
-//     if (align != 0) {
-//         sp -= align;
-//         memset(sp, 0, align);
-//     }
-
-//     // argv[count] = NULL
-//     sp -= sizeof(char *);
-//     memset(sp, 0, sizeof(char *));
-
-//     // argv[i] 주소 push
-//     for (int i = count - 1; i >= 0; i--) {
-//         sp -= sizeof(char *);
-//         memcpy(sp, &parse[i], sizeof(char *));
-//     }
-
-//     // fake return address (0)
-//     sp -= sizeof(void *);
-//     memset(sp, 0, sizeof(void *));
-
-//     // 최종 rsp 업데이트
-//     *rsp = (void *)sp;
-// }
-
 
 void argument_stack(char **parse, int count, void **rsp) // 주소를 전달받았으므로 이중 포인터 사용
 {
@@ -378,7 +342,9 @@ struct file *process_get_file(int fd) {
 void process_close_file(int fd) {
 	struct thread *curr = thread_current();
 	struct file **fdt = curr->fdt;
-	if (fd < 2 || fd >= FDT_COUNT_LIMIT) return NULL;
+	if (fd < 2 || fd >= FDT_COUNT_LIMIT) {
+		return NULL;
+	}
 	fdt[fd] = NULL;
 }
 
@@ -400,8 +366,9 @@ process_wait (tid_t child_tid UNUSED) {
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
 	struct thread *child = get_child_process(child_tid);
-    if (child == NULL) // 1) 자식이 아니면 -1을 반환한다.
+    if (child == NULL) {// 1) 자식이 아니면 -1을 반환한다.
         return -1;
+	}
 
     // 2) 자식이 종료될 때까지 대기한다. (process_exit에서 자식이 종료될 때 sema_up 해줄 것이다.)
     sema_down(&child->wait_sema);
@@ -421,17 +388,12 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-
-	// for (int i = 2; i < FDT_COUNT_LIMIT; i++) {
-	// 	close(i);
-	// }
-
+	
 	for (int i = 2; i < FDT_COUNT_LIMIT; i++)
 	{
-		if (curr->fdt[i] != NULL)
-			curr->fdt[i] = NULL;
-			curr->next_fd = NULL;
+		if (curr->fdt[i] != NULL) {
 			close(i);
+		}
 	}
 	palloc_free_multiple(curr->fdt, FDT_PAGES);
 	//palloc_free_page(curr->fdt);

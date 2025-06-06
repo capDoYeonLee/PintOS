@@ -37,8 +37,8 @@ int exec(const char *cmd_line);
 int fork(const char *thread_name, struct intr_frame *intr_frame);
 int wait(int pid);
 
-// void *mmap(void *addr, size_t length, int writable, int fd, off_t offset);
-// void munmap(void *addr);
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap(void *addr);
 
 /* System call.
  *
@@ -121,12 +121,12 @@ void syscall_handler(struct intr_frame *f UNUSED)
 	case SYS_CLOSE:
 		close(f->R.rdi);
 		break;
-	// case SYS_MMAP:
-	// 	f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
-	// 	break;
-	// case SYS_MUNMAP:
-	// 	munmap(f->R.rdi);
-	// 	break;
+	case SYS_MMAP:
+		f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+		break;
+	case SYS_MUNMAP:
+		munmap(f->R.rdi);
+		break;
 	}
 }
 
@@ -136,21 +136,9 @@ void check_address(void *addr)
 	
 	if (!is_user_vaddr(addr)) {exit(-1);}
 	
-	// if (pml4_get_page(thread_current()->pml4, addr) == NULL) exit(-1);
+	//if (pml4_get_page(thread_current()->pml4, addr) == NULL) exit(-1);
 }
 
-static void check_writable_address(const uint64_t *addr){
-        struct thread *cur = thread_current();
-        struct page *page = spt_find_page(&cur->spt, addr);
-        if(!page->writable){
-			return false;
-		}
-		//printf("page writable is %d \n", page->writable);
-		//printf("write is %d \n", write);
-		// if (write == 1 && page->writable == 0) {
-        //     exit(-1);
-		// }
-}
 
 int wait(int pid) {
 	return process_wait(pid);
@@ -214,7 +202,9 @@ int open(const char *file_name) {
 	}
 
 	int fd = process_add_file(file);
-	if (fd == -1) file_close(file);
+	if (fd == -1) {
+		file_close(file);
+	}
 
 	lock_release(&filesys_lock);
 	return fd;
@@ -248,14 +238,13 @@ void close(int fd) {
 int read(int fd, void *buffer, unsigned size)
 {
 	check_address(buffer);
-	//check_writable_address(buffer);
 
 	char *ptr = (char *)buffer;
 	int bytes_read = 0;
 
 	lock_acquire(&filesys_lock);
-	if (fd == STDIN_FILENO)
-	{
+
+	if (fd == STDIN_FILENO) {
         
 		for (int i = 0; i < size; i++)
 		{
@@ -264,17 +253,15 @@ int read(int fd, void *buffer, unsigned size)
 		}
 		lock_release(&filesys_lock);
 	}
-	else
-	{
-		if (fd < 2)
-		{
+	else {
+		if (fd < 2) {
 
 			lock_release(&filesys_lock);
 			return -1;
 		}
+
 		struct file *file = process_get_file(fd);
-		if (file == NULL)
-		{
+		if (file == NULL) {
 
 			lock_release(&filesys_lock);
 			return -1;
@@ -298,35 +285,54 @@ int write(int fd, const void *buffer, unsigned size)
 	int bytes_write = 0;
 
 	//if (fd == 1)
-	if (fd == 1)
+	if (fd == STDOUT_FILENO)
 	{
 		putbuf(buffer, size);
 		bytes_write = size;
 	}
 	else
 	{
-		if (fd < 2) return -1;
+		if (fd < 2) {
+			return -1;
+		}
 		struct file *file = process_get_file(fd);
-		if (file == NULL)  return -1;
+		if (file == NULL) {
+			return -1;
+		}
 
 		lock_acquire(&filesys_lock);
 		bytes_write = file_write(file, buffer, size);
 		lock_release(&filesys_lock);
 	}
 	return bytes_write;
-	
-
-    // check_address(buffer);
-	// if(fd == 1)
-	// {
-	// 	putbuf(buffer,size);
-	// 	return size;
-	// }
-
-	// struct file *f = process_get_file(fd);
-	// if (f == NULL) return -1;
-
-	// int bytes_write = file_write(f, buffer, size);
-	// return bytes_write;
 }
 
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
+
+	if (!addr || addr != pg_round_down(addr)) {
+		return NULL;
+	}
+
+	if (offset != pg_round_down(offset))
+        return NULL;
+
+    if (!is_user_vaddr(addr) || !is_user_vaddr(addr + length))
+        return NULL;
+
+    if (spt_find_page(&thread_current()->spt, addr))
+        return NULL;
+
+    struct file *f = process_get_file(fd);
+    if (f == NULL)
+        return NULL;
+
+    if (file_length(f) == 0 || (int)length <= 0)
+        return NULL;
+
+    return do_mmap(addr, length, writable, f, offset); // 파일이 매핑된 가상 주소 반환
+}
+
+
+void munmap(void *addr) {
+	do_munmap(addr);
+}

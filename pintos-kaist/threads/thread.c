@@ -433,6 +433,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->wait_on_lock = NULL; // 현재 요청한 락은 따로 없으니 NULL로 초기화
 	list_init(&(t->donations)); //priority를 기부해준 스레드 리스트
 
+	t->exit_status = 0; // exit status 초기화.
 	t->next_fd = 2; // 첫 번째 파일의 fd 번호를 3부터 시작하도록 만드는 설정
 
 	list_init(&(t->child_list));

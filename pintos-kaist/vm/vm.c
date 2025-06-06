@@ -349,6 +349,26 @@ supplemental_page_table_copy (struct supplemental_page_table *child_spt UNUSED,
 			continue;
 		} 
 
+		//type == file
+		if (type == VM_FILE) {
+			struct lazy_load_arg *file_aux = malloc(sizeof(struct lazy_load_arg));
+			
+			file_aux->file = parent_page->file.file;
+			file_aux->ofs = parent_page->file.ofs;
+			file_aux->read_bytes = parent_page->file.read_bytes;
+			file_aux->zero_bytes = parent_page->file.zero_bytes;
+
+			if (!vm_alloc_page_with_initializer(type, upage, writable, NULL, file_aux)) {
+				return false;
+			}
+
+			struct page *file_page = spt_find_page(child_spt, upage);
+			file_backed_initializer(file_page, type, NULL);
+			
+			continue;
+
+		}
+
 		// type != uninit
 		if (!vm_alloc_page(type, upage, writable)) { // uninit page 생성 & 초기화
 			return false;
@@ -365,6 +385,8 @@ supplemental_page_table_copy (struct supplemental_page_table *child_spt UNUSED,
 	}
 	return true;
 }
+
+
 void hash_page_destroy(struct hash_elem *e, void *aux)
 {
     struct page *page = hash_entry(e, struct page, hash_elem);
